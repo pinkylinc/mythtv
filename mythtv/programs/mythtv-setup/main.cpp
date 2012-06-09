@@ -348,7 +348,6 @@ int main(int argc, char *argv[])
 
     if (use_display)
     {
-        gCoreContext->SetSetting("Theme", DEFAULT_UI_THEME);
         GetMythUI()->LoadQtConfig();
 
         QString fileprefix = GetConfDir();
@@ -362,7 +361,7 @@ int main(int argc, char *argv[])
     {
         bool okCardID = scanCardId;
 
-        QStringList inputnames = CardUtil::GetInputNames(scanCardId);
+        QStringList inputnames = CardUtil::GetInputNames(scanCardId, 0, QString("'main','scan'"));
         okCardID &= !inputnames.empty();
 
         if (scanInputName.isEmpty())

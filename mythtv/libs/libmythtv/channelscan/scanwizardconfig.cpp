@@ -25,8 +25,8 @@ ScanWizardConfig::ScanWizardConfig(
     QString default_inputname) :
     VerticalConfigurationGroup(false, true, false, false),
     videoSource(new VideoSourceSelector(
-                    default_sourceid, CardUtil::GetScanableCardTypes(), false)),
-    input(new InputSelector(default_cardid, default_inputname)),
+                    default_sourceid, CardUtil::GetScanableCardTypes(), false, QString("'main','scan'"))),
+    input(new InputSelector(default_cardid, default_inputname, QString("'main','scan'"))),
     scanType(new ScanTypeSetting()),
     scanConfig(new ScanOptionalConfig(scanType)),
     services(new DesiredServices()),

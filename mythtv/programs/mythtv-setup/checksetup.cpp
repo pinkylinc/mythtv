@@ -50,13 +50,12 @@ bool checkStoragePaths(QStringList &probs)
     MSqlQuery query(MSqlQuery::InitCon());
 
     query.prepare("SELECT count(groupname) FROM storagegroup;");
-    if (!query.exec() || !query.isActive() || query.size() < 1)
+    if (!query.exec() || !query.next())
     {
         MythDB::DBError("checkStoragePaths", query);
         return false;
     }
 
-    query.next();
     if (query.value(0).toInt() == 0)
     {
         QString trMesg =
@@ -182,8 +181,10 @@ bool checkChannelPresets(QStringList &probs)
 
     MSqlQuery query(MSqlQuery::InitCon());
 
-    query.prepare("SELECT cardid, startchan, sourceid, inputname"
-                  " FROM cardinput;");
+    query.prepare("SELECT cardid, startchan, sourceid, inputname "
+                  "FROM   cardinput, videosourcemap "
+                  "WHERE  cardinput.cardinputid = videosourcemap.cardinputid AND "
+                  "       videosourcemap.type   = 'main';");
 
     if (!query.exec() || !query.isActive())
     {
