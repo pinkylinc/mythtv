@@ -4231,10 +4231,12 @@ bool ProgramInfo::QueryTuningInfo(QString &channum, QString &input) const
     MSqlQuery query(MSqlQuery::InitCon());
 
     query.prepare("SELECT channel.channum, cardinput.inputname "
-                  "FROM channel, capturecard, cardinput "
+                  "FROM channel, capturecard, cardinput, videosourcemap as map "
                   "WHERE channel.chanid     = :CHANID            AND "
                   "      cardinput.cardid   = capturecard.cardid AND "
-                  "      cardinput.sourceid = :SOURCEID          AND "
+                  "       cardinput.cardinputid = map.cardinputid  AND "
+                  "       map.sourceid          = :SOURCEID        AND "
+                  "       map.type in ('main')                     AND "
                   "      capturecard.cardid = :CARDID");
     query.bindValue(":CHANID",   chanid);
     query.bindValue(":SOURCEID", sourceid);
