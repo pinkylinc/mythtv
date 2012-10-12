@@ -52,7 +52,7 @@ static QString load_profile(QString,void*,RecordingInfo*,RecordingProfile&);
 static int init_jobs(const RecordingInfo *rec, RecordingProfile &profile,
                      bool on_host, bool transcode_bfr_comm, bool on_line_comm);
 static void apply_broken_dvb_driver_crc_hack(ChannelBase*, MPEGStreamData*);
-
+static int eit_start_rand(uint cardid, int eitTransportTimeout);
 
 /** \class TVRec
  *  \brief This is the coordinating class of the \ref recorder_subsystem.
@@ -107,7 +107,7 @@ TVRec::TVRec(int capturecardnum)
       switchingBuffer(false),
       m_recStatus(rsUnknown),
       // Current recording info
-      curRecording(NULL), autoRunJobs(JOB_NONE),
+      curRecording(NULL),
       overrecordseconds(0),
       // Pseudo LiveTV recording
       pseudoLiveTVRecording(NULL),
@@ -161,7 +161,8 @@ bool TVRec::Init(void)
         gCoreContext->GetNumSetting("AutoTranscodeBeforeAutoCommflag", 0);
     earlyCommFlag     = gCoreContext->GetNumSetting("AutoCommflagWhileRecording", 0);
     runJobOnHostOnly  = gCoreContext->GetNumSetting("JobsRunOnRecordHost", 0);
-    eitTransportTimeout=gCoreContext->GetNumSetting("EITTransportTimeout", 5) * 60;
+    eitTransportTimeout =
+        max(gCoreContext->GetNumSetting("EITTransportTimeout", 5) * 60, 6);
     eitCrawlIdleStart = gCoreContext->GetNumSetting("EITCrawIdleStart", 60);
     audioSampleRateDB = gCoreContext->GetNumSetting("AudioSampleRate");
     overRecordSecNrml = gCoreContext->GetNumSetting("RecordOverTime");
@@ -784,6 +785,10 @@ void TVRec::StartedRecording(RecordingInfo *curRec)
     if (curRec->IsCommercialFree())
         curRec->SaveCommFlagged(COMM_FLAG_COMMFREE);
 
+    AutoRunInitType t = (curRec->QueryRecordingGroup() == "LiveTV") ?
+        kAutoRunNone : kAutoRunProfile;
+    InitAutoRunJobs(curRec, t, NULL, __LINE__);
+
     SendMythSystemRecEvent("REC_STARTED", curRec);
 }
 
@@ -916,7 +921,7 @@ void TVRec::FinishedRecording(RecordingInfo *curRec, RecordingQuality *recq)
     curRec->FinishedRecording(!is_good || (recgrp == "LiveTV"));
 
     // send out REC_FINISHED message
-    SendMythSystemRecEvent("REC_FINISHED", curRecording);
+    SendMythSystemRecEvent("REC_FINISHED", curRec);
 
     // send out DONE_RECORDING message
     int secsSince = curRec->GetRecordingStartTime()
@@ -927,18 +932,29 @@ void TVRec::FinishedRecording(RecordingInfo *curRec, RecordingQuality *recq)
     gCoreContext->dispatch(me);
 
     // Handle JobQueue
+    QHash<QString,int>::iterator autoJob =
+        autoRunJobs.find(curRec->MakeUniqueKey());
+    if (autoJob == autoRunJobs.end())
+    {
+        LOG(VB_GENERAL, LOG_INFO,
+            "autoRunJobs not initialized until FinishedRecording()");
+        AutoRunInitType t =
+            (recgrp == "LiveTV") ? kAutoRunNone : kAutoRunProfile;
+        InitAutoRunJobs(curRec, t, NULL, __LINE__);
+        autoJob = autoRunJobs.find(curRec->MakeUniqueKey());
+    }
+    LOG(VB_JOBQUEUE, LOG_INFO, QString("AutoRunJobs 0x%1").arg(*autoJob,0,16));
     if ((recgrp == "LiveTV") || (fsize < 1000) ||
         (curRec->GetRecordingStatus() != rsRecorded) ||
         (curRec->GetRecordingStartTime().secsTo(
             QDateTime::currentDateTime()) < 120))
     {
-        JobQueue::RemoveJobsFromMask(JOB_COMMFLAG,  autoRunJobs);
-        JobQueue::RemoveJobsFromMask(JOB_TRANSCODE, autoRunJobs);
+        JobQueue::RemoveJobsFromMask(JOB_COMMFLAG,  *autoJob);
+        JobQueue::RemoveJobsFromMask(JOB_TRANSCODE, *autoJob);
     }
-    if (autoRunJobs)
-    {
-        JobQueue::QueueRecordingJobs(*curRec, autoRunJobs);
-    }
+    if (*autoJob != JOB_NONE)
+        JobQueue::QueueRecordingJobs(*curRec, *autoJob);
+    autoRunJobs.erase(autoJob);
 }
 
 #define TRANSITION(ASTATE,BSTATE) \
@@ -1019,7 +1035,10 @@ void TVRec::HandleStateChange(void)
 
     eitScanStartTime = QDateTime::currentDateTime();
     if (scanner && (internalState == kState_None))
-        eitScanStartTime = eitScanStartTime.addSecs(eitCrawlIdleStart);
+    {
+        eitScanStartTime = eitScanStartTime.addSecs(
+            eitCrawlIdleStart + eit_start_rand(cardid, eitTransportTimeout));
+    }
     else
         eitScanStartTime = eitScanStartTime.addYears(1);
 }
@@ -1202,6 +1221,19 @@ static int no_capturecards(uint cardid)
     return -1;
 }
 
+static int eit_start_rand(uint cardid, int eitTransportTimeout)
+{
+    // randomize start time a bit
+    int timeout = random() % (eitTransportTimeout / 3);
+    // get the number of capture cards and the position of the current card
+    // to distribute the the scan start evenly over eitTransportTimeout
+    int card_pos = no_capturecards(cardid);
+    int no_cards = no_capturecards(0);
+    if (no_cards > 0 && card_pos >= 0)
+        timeout += eitTransportTimeout * card_pos / no_cards;
+    return timeout;
+}
+
 /// \brief Event handling method, contains event loop.
 void TVRec::run(void)
 {
@@ -1216,17 +1248,8 @@ void TVRec::run(void)
         (dvbOpt.dvb_eitscan || get_use_eit(cardid)))
     {
         scanner = new EITScanner(cardid);
-        uint timeout = eitCrawlIdleStart;
-        // get the number of capture cards and the position of the current card
-        // to distribute the the scan start evenly over eitTransportTimeout
-        int card_pos = no_capturecards(cardid);
-        int no_cards = no_capturecards(0);
-        if (no_cards > 0 && card_pos >= 0)
-            timeout += eitTransportTimeout * card_pos / no_cards;
-        else
-            timeout += random() % eitTransportTimeout;
-
-        eitScanStartTime = eitScanStartTime.addSecs(timeout);
+        eitScanStartTime = eitScanStartTime.addSecs(
+            eitCrawlIdleStart + eit_start_rand(cardid, eitTransportTimeout));
     }
     else
         eitScanStartTime = eitScanStartTime.addYears(1);
@@ -2705,6 +2728,31 @@ void TVRec::NotifySchedulerOfRecording(RecordingInfo *rec)
     ClearFlags(kFlagCancelNextRecording);
 }
 
+void TVRec::InitAutoRunJobs(RecordingInfo *rec, AutoRunInitType t,
+                            RecordingProfile *recpro, int line)
+{
+    if (kAutoRunProfile == t)
+    {
+        RecordingProfile profile;
+        if (!recpro)
+        {
+            load_profile(genOpt.cardtype, NULL, rec, profile);
+            recpro = &profile;
+        }
+        autoRunJobs[rec->MakeUniqueKey()] =
+            init_jobs(rec, *recpro, runJobOnHostOnly,
+                      transcodeFirst, earlyCommFlag);
+    }
+    else
+    {
+        autoRunJobs[rec->MakeUniqueKey()] = JOB_NONE;
+    }
+    LOG(VB_JOBQUEUE, LOG_INFO,
+        QString("InitAutoRunJobs for %1, line %2 -> 0x%3")
+        .arg(rec->MakeUniqueKey()).arg(line)
+        .arg(autoRunJobs[rec->MakeUniqueKey()],0,16));
+}
+
 /** \fn TVRec::SetLiveRecording(int)
  *  \brief Tells the Scheduler about changes to the recording status
  *         of the LiveTV recording.
@@ -2733,7 +2781,7 @@ void TVRec::SetLiveRecording(int recording)
         // cancel -- 'recording' should be 0 or -1
         SetFlags(kFlagCancelNextRecording);
         curRecording->SetRecordingGroup("LiveTV");
-        autoRunJobs = JOB_NONE;
+        InitAutoRunJobs(curRecording, kAutoRunNone, NULL, __LINE__);
     }
     else if (!was_rec && pseudoLiveTVRecording)
     {
@@ -2747,11 +2795,7 @@ void TVRec::SetLiveRecording(int recording)
         NotifySchedulerOfRecording(curRecording);
         recstat = curRecording->GetRecordingStatus();
         curRecording->SetRecordingGroup("Default");
-
-        RecordingProfile profile;
-        load_profile(genOpt.cardtype, NULL, curRecording, profile);
-        autoRunJobs = init_jobs(curRecording, profile, runJobOnHostOnly,
-                                transcodeFirst, earlyCommFlag);
+        InitAutoRunJobs(curRecording, kAutoRunProfile, NULL, __LINE__);
     }
 
     MythEvent me(QString("UPDATE_RECORDING_STATUS %1 %2 %3 %4 %5")
@@ -4079,10 +4123,6 @@ void TVRec::TuningNewRecorder(MPEGStreamData *streamData)
 
     SetFlags(kFlagRecorderRunning | kFlagRingBufferReady);
 
-    if (!tvchain)
-        autoRunJobs = init_jobs(rec, profile, runJobOnHostOnly,
-                                transcodeFirst, earlyCommFlag);
-
     ClearFlags(kFlagNeedToStartRecorder);
     return;
 
@@ -4153,11 +4193,7 @@ void TVRec::TuningRestartRecorder(void)
         curRecording->ApplyRecordRecGroupChange(
             curRecording->GetRecordingRule()->m_recGroup);
 
-        RecordingProfile profile;
-        QString profileName = load_profile(genOpt.cardtype, NULL,
-                                           curRecording, profile);
-        autoRunJobs = init_jobs(curRecording, profile, runJobOnHostOnly,
-                                transcodeFirst, earlyCommFlag);
+        InitAutoRunJobs(curRecording, kAutoRunProfile, NULL, __LINE__);
     }
 
     ClearFlags(kFlagNeedToStartRecorder);

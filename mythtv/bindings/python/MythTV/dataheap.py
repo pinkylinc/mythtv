@@ -612,6 +612,7 @@ class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
     def fromRecorded(cls, rec, type, status=None, schedruntime=None,
                                hostname=None, args=None, flags=None):
         job = cls(db=rec._db)
+        job.type = type
         job.chanid = rec.chanid
         job.starttime = rec.starttime
         if status:
@@ -632,6 +633,7 @@ class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
         if prog.rectype != prog.rsRecorded:
             raise MythError('Invalid recording type for Job.')
         job = cls(db=prog._db)
+        job.type = type
         job.chanid = prog.chanid
         job.starttime = prog.recstartts
         if status:
@@ -961,7 +963,8 @@ class Video( CMPVideo, VideoSchema, DBDataWrite ):
 
         # pull direct tags
         for tag in ('title', 'subtitle', 'tagline', 'season', 'episode',
-                    'inetref', 'homepage', 'trailer', 'userrating', 'year'):
+                    'inetref', 'homepage', 'trailer', 'userrating', 'year',
+                    'releasedate'):
             if metadata[tag] and _allow_change(self, tag, overwrite):
                 self[tag] = metadata[tag]
 
@@ -991,7 +994,8 @@ class Video( CMPVideo, VideoSchema, DBDataWrite ):
             for image in metadata.images:
                 if not hasattr(self, image.type):
                     continue
-                if getattr(self, image.type) and not overwrite:
+                current = getattr(self, image.type)
+                if current and (current != 'No Cover') and not overwrite:
                     continue
                 setattr(self, image.type, image.filename)
                 getattr(self, image.type).downloadFrom(image.url)
@@ -1008,7 +1012,8 @@ class Video( CMPVideo, VideoSchema, DBDataWrite ):
 
         # pull direct tags
         for tag in ('title', 'subtitle', 'tagline', 'season', 'episode',
-                    'inetref', 'homepage', 'trailer', 'userrating', 'year'):
+                    'inetref', 'homepage', 'trailer', 'userrating', 'year',
+                    'releasedate'):
             if self[tag]:
                 metadata[tag] = self[tag]
 

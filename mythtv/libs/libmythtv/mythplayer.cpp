@@ -4598,9 +4598,13 @@ int MythPlayer::GetSecondsBehind(void) const
 
 int64_t MythPlayer::GetSecondsPlayed(void)
 {
+#if 0
     return decoder->IsCodecMPEG() ?
                 (disp_timecode / 1000.f) :
                 (framesPlayed / video_frame_rate);
+#else
+    return framesPlayed / video_frame_rate;
+#endif
 }
 
 int64_t MythPlayer::GetTotalSeconds(void) const
@@ -5008,7 +5012,8 @@ void MythPlayer::ToggleNightMode(void)
 bool MythPlayer::CanVisualise(void)
 {
     if (videoOutput)
-        return videoOutput->CanVisualise(&audio, NULL);
+        return videoOutput->
+            CanVisualise(&audio, GetMythMainWindow()->GetRenderDevice());
     return false;
 }
 
