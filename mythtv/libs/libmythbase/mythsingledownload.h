@@ -28,10 +28,13 @@ class MBASE_PUBLIC MythSingleDownload : public QObject
    MythSingleDownload(void) : m_reply(NULL), m_errorcode(QNetworkReply::NoError) { ; }
    ~MythSingleDownload(void) { ; }
 
-   bool DownloadURL(const QString &url, QByteArray *buffer, uint timeout = 30000);
+   bool DownloadURL(const QString &url, QByteArray *buffer, uint timeout = 30000, qint64 maxsize = 0);
    void Cancel(void);
    QString ErrorString(void) const { return m_errorstring; }
    QNetworkReply::NetworkError ErrorCode(void) const { return m_errorcode; }
+
+  private slots:
+   void Progress(qint64 bytesRead, qint64 totalBytes);
 
   private:
 
@@ -43,6 +46,8 @@ class MBASE_PUBLIC MythSingleDownload : public QObject
 
     QString               m_errorstring;
     QNetworkReply::NetworkError m_errorcode;
+    QByteArray           *m_buffer;
+    qint64                m_maxsize;
 };
 
 #endif
