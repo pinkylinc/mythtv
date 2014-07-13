@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "audiooutputsettings.h"
+#include "audiooutput.h"
 
 class  MythPlayer;
 class  AudioOutput;
@@ -29,10 +30,17 @@ class MTV_PUBLIC AudioPlayer
     void  DeleteOutput(void);
     QString ReinitAudio(void);
     void  SetAudioOutput(AudioOutput *ao);
+    /*
     void  SetAudioInfo(const QString &main_device,
                        const QString &passthru_device,
                        uint           samplerate,
                        int            bitrate = -1);
+    */
+    void  AddAudioInfo(const QString &main_device,
+                       const QString &passthru_device,
+                       uint           samplerate,
+                       int            bitrate = -1);
+
     void  SetAudioParams(AudioFormat format, int orig_channels, int channels,
                          int codec, int samplerate, bool passthru,
                          int bitrate = -1);
@@ -91,16 +99,25 @@ class MTV_PUBLIC AudioPlayer
     /**
      * Return internal AudioOutput object
      */
-    AudioOutput *GetAudioOutput(void) const { return m_audioOutput; }
+    AudioOutput *GetAudioOutput(void) const { return m_audioOutputMain; }
+
+
+
+
 
   private:
     void AddVisuals(void);
     void RemoveVisuals(void);
     void ResetVisuals(void);
 
+    void internalAudioSync(void);
+
   private:
     MythPlayer  *m_parent;
-    AudioOutput *m_audioOutput;
+    AudioOutput *m_audioOutputMain;
+
+    AudioOutput *m_audioOutputSecondary;
+
     int          m_channels;
     int          m_orig_channels;
     int          m_codec;
@@ -108,15 +125,25 @@ class MTV_PUBLIC AudioPlayer
     int          m_samplerate;
     int          m_codec_profile;
     float        m_stretchfactor;
+
+    float        m_timeadj;
+
     bool         m_passthru;
     QMutex       m_lock;
     bool         m_muted_on_creation;
-    QString      m_main_device;
-    QString      m_passthru_device;
+    //QString      m_main_device;
+
+    //QString      m_copy_device;
+
+    //QString      m_passthru_device;
     bool         m_no_audio_in;
     bool         m_no_audio_out;
     bool         m_controls_volume;
     vector<MythTV::Visual*> m_visuals;
+
+
+    //vector<AudioOutput*> m_audioOutputs;
+    QList<AudioSettings*> m_aoslist;
 };
 
 #endif // AUDIOPLAYER_H

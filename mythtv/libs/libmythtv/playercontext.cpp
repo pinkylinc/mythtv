@@ -394,16 +394,73 @@ bool PlayerContext::CreatePlayer(TV *tv, QWidget *widget,
     else
         player = new MythPlayer((PlayerFlags)playerflags);
 
-    QString passthru_device = 
-        gCoreContext->GetNumSetting("PassThruDeviceOverride", false) ?
-        gCoreContext->GetSetting("PassThruOutputDevice") : QString::null;
+
+
+
+
+
+
+
+
 
     player->SetPlayerInfo(tv, widget, this);
     AudioPlayer *audio = player->GetAudio();
-    audio->SetAudioInfo(gCoreContext->GetSetting("AudioOutputDevice"),
-                        passthru_device,
-                        gCoreContext->GetNumSetting("AudioSampleRate", 44100));
+
+    //QString passthru_device =
+    //    gCoreContext->GetNumSetting("PassThruDeviceOverride", false) ?
+    //    gCoreContext->GetSetting("PassThruOutputDevice") : QString::null;
+
+
+
+
+    //audio->SetAudioInfo(gCoreContext->GetSetting("AudioOutputDevice"),
+    //                    passthru_device,
+    //                    gCoreContext->GetNumSetting("AudioSampleRate", 44100));
+
+
+
+    //-------------------
+    MSqlQuery query(MSqlQuery::InitCon());
+    query.prepare("SELECT audioid, audiodevice, passthrudevice, samplerate "
+                  "FROM   audioprofiles "
+                  "WHERE  hostname = :HOSTNAME "
+                  "ORDER BY id;");
+    query.bindValue(":HOSTNAME", gCoreContext->GetHostName());
+    if (!query.exec() || !query.isActive())
+        MythDB::DBError("PlayerContext::CreatePlayer", query);
+    else
+    {
+        int dev_count = query.size();
+
+        while (query.next())
+        {
+            QString audio_device    = query.value(1).toString();
+            QString passthru_device = query.value(2).toString();
+            uint samplerate = (query.value(3).toUint() > 0 ? query.value(3).toUint() : 44100);
+
+            audio->AddAudioInfo(audio_device, passthru_device, samplerate);
+        }
+    }
+
+    //-------------------
+
+
+
+
+
+
+
+
+
+
+
     audio->SetStretchFactor(ts_normal);
+
+
+
+
+
+
     player->SetLength(playingLen);
 
     player->SetVideoFilters((useNullVideo) ? "onefield" : "");
